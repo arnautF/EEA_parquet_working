@@ -1,0 +1,24 @@
+pollutant,aliases,framework,reference_year,averaging_period,limit_value,unit,allowed_exceedances_per_year,notes
+PM2.5,PM2.5|PM2_5|PM25|PM 2.5|6001,EU,2030,daily,25,ug/m3,18,Directive EU 2024/2881 one-day limit
+PM2.5,PM2.5|PM2_5|PM25|PM 2.5|6001,EU,2030,annual,10,ug/m3,,Directive EU 2024/2881 calendar-year limit
+PM2.5,PM2.5|PM2_5|PM25|PM 2.5|6001,WHO,2021,daily,15,ug/m3,3-4,WHO 2021 24-hour AQG; 99th percentile
+PM2.5,PM2.5|PM2_5|PM25|PM 2.5|6001,WHO,2021,annual,5,ug/m3,,WHO 2021 annual AQG
+PM10,PM10|PM 10|6005,EU,2030,daily,45,ug/m3,18,Directive EU 2024/2881 one-day limit
+PM10,PM10|PM 10|6005,EU,2030,annual,20,ug/m3,,Directive EU 2024/2881 calendar-year limit
+PM10,PM10|PM 10|6005,WHO,2021,daily,45,ug/m3,3-4,WHO 2021 24-hour AQG; 99th percentile
+PM10,PM10|PM 10|6005,WHO,2021,annual,15,ug/m3,,WHO 2021 annual AQG
+NO2,NO2|NO₂|NITROGEN DIOXIDE,EU,2030,daily,50,ug/m3,18,Directive EU 2024/2881 one-day limit
+NO2,NO2|NO₂|NITROGEN DIOXIDE,EU,2030,annual,20,ug/m3,,Directive EU 2024/2881 calendar-year limit
+NO2,NO2|NO₂|NITROGEN DIOXIDE,WHO,2021,daily,25,ug/m3,3-4,WHO 2021 24-hour AQG; 99th percentile
+NO2,NO2|NO₂|NITROGEN DIOXIDE,WHO,2021,annual,10,ug/m3,,WHO 2021 annual AQG
+SO2,SO2|SO₂|SULPHUR DIOXIDE|SULFUR DIOXIDE,EU,2030,daily,50,ug/m3,18,Directive EU 2024/2881 one-day limit
+SO2,SO2|SO₂|SULPHUR DIOXIDE|SULFUR DIOXIDE,EU,2030,annual,20,ug/m3,,Directive EU 2024/2881 calendar-year limit
+SO2,SO2|SO₂|SULPHUR DIOXIDE|SULFUR DIOXIDE,WHO,2021,daily,40,ug/m3,3-4,WHO 2021 24-hour AQG; 99th percentile
+CO,CO|CARBON MONOXIDE,EU,2030,daily,4,mg/m3,18,Directive EU 2024/2881 one-day limit
+CO,CO|CARBON MONOXIDE,WHO,2021,daily,4,mg/m3,3-4,WHO 2021 24-hour AQG; 99th percentile
+Benzene,BENZENE|C6H6,EU,2030,annual,3.4,ug/m3,,Directive EU 2024/2881 calendar-year limit
+Lead,LEAD|PB,EU,2030,annual,0.5,ug/m3,,Directive EU 2024/2881 calendar-year limit
+Arsenic,ARSENIC|AS,EU,2030,annual,6,ng/m3,,Directive EU 2024/2881 calendar-year target value
+Cadmium,CADMIUM|CD,EU,2030,annual,5,ng/m3,,Directive EU 2024/2881 calendar-year target value
+Nickel,NICKEL|NI,EU,2030,annual,20,ng/m3,,Directive EU 2024/2881 calendar-year target value
+Benzo(a)pyrene,BENZO(A)PYRENE|BENZOAPYRENE|BAP,EU,2030,annual,1,ng/m3,,Directive EU 2024/2881 calendar-year target value
