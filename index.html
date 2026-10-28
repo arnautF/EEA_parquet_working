@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Air Quality Parquet Explorer</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 :root{--bg:#f7f7f5;--panel:#fff;--text:#202020;--muted:#707070;--line:#deded9;--blue:#245f9e;--blue2:#174b82;--red:#a2342a;--green:#29704b;--radius:6px}
 *{box-sizing:border-box}
@@ -77,7 +80,9 @@ tbody tr:hover td{background:#fbfdff}
 .notice{background:#fffaeb;border:1px solid #fedf89;color:#7a2e0e;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:12px}
 .errorbox{display:none;background:#fef3f2;border:1px solid #fecdca;color:#912018;border-radius:10px;padding:11px 12px;font-size:12px;white-space:pre-wrap;margin-bottom:12px}
 .badge{display:inline-flex;padding:3px 6px;border:1px solid var(--line);border-radius:3px;background:#fafafa;color:#555;font-size:11px;font-weight:600}
+.series-picker{border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px}.series-picker label{display:flex;gap:6px;align-items:center}.quality-note{margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:4px;background:#fafafa;font-size:12px;line-height:1.5}.flag-low{color:#9a6700;font-weight:700}.flag-bad{color:var(--red);font-weight:700}.flag-good{color:var(--green);font-weight:700}
 .stats-table td:first-child{color:var(--muted)}
+#stationMap{width:100%;height:620px;min-width:0;position:relative;border:1px solid var(--line);border-radius:4px;background:#f3f4f6}.map-note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:10px}.map-legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted)}.map-key{display:inline-flex;gap:6px;align-items:center}.map-dot{width:10px;height:10px;border-radius:50%;display:inline-block}.map-dot.all{background:#245f9e}.map-dot.current{background:#d92d20}
 .loading{opacity:.55;pointer-events:none}
 @media(max-width:1050px){
   .stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}
@@ -146,6 +151,7 @@ tbody tr:hover td{background:#fbfdff}
         <button class="tab" data-tab="data" onclick="showTab('data')">Browse data</button>
         <button class="tab" data-tab="visualize" onclick="showTab('visualize')">Visualize</button>
         <button class="tab" data-tab="stats" onclick="showTab('stats')">Statistics</button>
+        <button class="tab" data-tab="map" onclick="showTab('map')">Station map</button>
         <button class="tab" data-tab="export" onclick="showTab('export')">Export</button>
       </div>
 
@@ -156,7 +162,7 @@ tbody tr:hover td{background:#fbfdff}
         </div>
         <div class="grid2">
           <div class="card">
-            <div class="section-head"><h2>File metadata</h2><span id="fileFormatBadge" class="badge">Parquet</span></div>
+            <div class="section-head"><h2>File metadata</h2><div style="display:flex;gap:6px;flex-wrap:wrap"><span id="aggregationBadge" class="badge">Aggregation: detecting…</span><span id="timezoneBadge" class="badge">Timezone: detecting…</span><span id="fileFormatBadge" class="badge">Parquet</span></div></div>
             <div id="fileMetadata" class="meta-grid"></div>
           </div>
           <div class="card">
@@ -207,6 +213,7 @@ tbody tr:hover td{background:#fbfdff}
       <section id="pane-visualize" class="tabpane">
         <div class="card">
           <div class="section-head"><h2>Visualization</h2><span id="chartRows" class="badge"></span></div>
+          <div id="seriesPicker" class="series-picker"></div>
           <div class="chart-controls">
             <select id="chartType" class="control" onchange="drawChart()">
               <option value="line">Line</option>
@@ -233,6 +240,27 @@ tbody tr:hover td{background:#fbfdff}
         <div class="card">
           <div class="section-head"><h2>Value statistics</h2><span id="statsInfo" class="badge"></span></div>
           <div id="summaryStats" class="tablewrap"></div>
+          <div class="quality-note"><strong>Quality handling:</strong> EEA Validity -1 (Not valid) and -99 (Not valid due to station maintenance or calibration) are excluded from calculated statistics. Validity 1–4 are retained. Verification is descriptive and does not exclude observations.</div>
+        </div>
+        <div class="card"><div class="section-head"><h2>Reference values and exceedances</h2><span class="badge">EU 2030 / WHO 2021</span></div><div id="referenceStats" class="tablewrap"><div style="padding:18px;color:#707070">Open Statistics to calculate reference-value indicators.</div></div></div>
+      </section>
+
+
+      <section id="pane-map" class="tabpane">
+        <div class="card">
+          <div class="section-head">
+            <h2>Air quality stations</h2>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span id="mapCountry" class="badge">Country: —</span>
+              <span id="mapStationCount" class="badge">Stations: —</span>
+            </div>
+          </div>
+          <div class="map-legend" style="margin-bottom:10px">
+            <span class="map-key"><span class="map-dot all"></span>Other stations in country</span>
+            <span class="map-key"><span class="map-dot current"></span>Current monitoring station</span>
+          </div>
+          <div id="stationMap"></div>
+          <div id="mapNote" class="map-note">The map uses station coordinates from DataExtract.csv.gz and OpenStreetMap tiles. Stations are filtered to the country of the currently selected sampling point.</div>
         </div>
       </section>
 
@@ -240,23 +268,12 @@ tbody tr:hover td{background:#fbfdff}
         <div class="card">
           <div class="section-head"><h2>Export data</h2></div>
           <div class="export-grid">
-            <div class="export-card">
-              <h3>CSV</h3>
-              <p>Export the complete original table as a standard CSV file.</p>
-              <button class="btn primary" onclick="exportData('csv')">Export CSV</button>
-            </div>
-            <div class="export-card">
-              <h3>TRAINSET CSV</h3>
-              <p>Single-series TRAINSET format: series, timestamp, value, label. Downsample 1 keeps every point; 2 keeps every second point; 3 every third point, etc.</p>
-              <label for="trainDownsample" style="display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px">Downsample</label>
-              <input id="trainDownsample" class="control" type="number" min="1" step="1" value="1" style="margin-bottom:10px" aria-label="TRAINSET downsample factor">
-              <button class="btn primary" onclick="exportTrainset()">Export TRAINSET CSV</button>
-            </div>
-            <div class="export-card">
-              <h3>JSON</h3>
-              <p>Portable format for web applications and APIs.</p>
-              <button class="btn primary" onclick="exportData('json')">Export JSON</button>
-            </div>
+            <div class="export-card"><h3>Full data</h3><p>Export the complete original table.</p><button class="btn primary" onclick="exportData('csv')">CSV</button> <button class="btn" onclick="exportData('json')">JSON</button> <button class="btn" onclick="exportExcel('full')">Excel</button></div>
+            <div class="export-card"><h3>Quality-filtered data</h3><p>Export observations after excluding EEA-invalid rows (Validity -1 and -99).</p><button class="btn primary" onclick="exportProcessed('filtered','csv')">CSV</button> <button class="btn" onclick="exportExcel('filtered')">Excel</button></div>
+            <div class="export-card"><h3>Daily aggregated data</h3><p>Daily mean plus coverage and flag. Below 50% the mean is withheld; 50–&lt;75% is flagged.</p><button class="btn primary" onclick="exportProcessed('daily','csv')">CSV</button> <button class="btn" onclick="exportExcel('daily')">Excel</button></div>
+            <div class="export-card"><h3>Annual aggregated data</h3><p>Annual mean plus coverage and flag using the same 50% / 75% rules.</p><button class="btn primary" onclick="exportProcessed('annual','csv')">CSV</button> <button class="btn" onclick="exportExcel('annual')">Excel</button></div>
+            <div class="export-card"><h3>Wide multi-file data</h3><p>Timestamp plus one Value column for each imported station/pollutant file.</p><button class="btn primary" onclick="exportWide('csv')">CSV</button> <button class="btn" onclick="exportWide('xlsx')">Excel</button></div>
+            <div class="export-card"><h3>TRAINSET CSV</h3><p>Single-series TRAINSET format: series, timestamp, value, label. Downsample 1 keeps every point; 2 every second point, etc.</p><label for="trainDownsample" style="display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px">Downsample</label><input id="trainDownsample" class="control" type="number" min="1" step="1" value="1" style="margin-bottom:10px"><button class="btn primary" onclick="exportTrainset()">Export TRAINSET CSV</button></div>
           </div>
         </div>
       </section>
@@ -270,7 +287,7 @@ import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0
 
 const state = {
   db:null, conn:null, files:[], current:null, schema:[], fileMeta:null,
-  page:0, daysPerPage:1, rowCount:0, previewDays:[], chart:null, metadataPromise:null, metadataReady:false, metadataError:null
+  page:0, daysPerPage:1, rowCount:0, previewDays:[], chart:null, metadataPromise:null, metadataReady:false, metadataError:null, timezone:"Source / unspecified", aggregation:"Variable", pollutant:"", country:"", samplingPointId:"", stationLatitude:null, stationLongitude:null, stationMap:null, mapLayer:null, mapStationsCache:new Map(), mapRenderedKey:""
 };
 
 const $ = id => document.getElementById(id);
@@ -380,10 +397,42 @@ async function importFiles(files){
   finally{busy(false)}
 }
 
+function validityColumn(schema=state.schema){ return schema.find(c=>c.column_name.toLowerCase()==="validity")||null; }
+function verificationColumn(schema=state.schema){ return schema.find(c=>c.column_name.toLowerCase()==="verification")||null; }
+function valueColumn(schema=state.schema){ return schema.find(c=>c.column_name.toLowerCase()==="value")||null; }
+function qualityPredicate(schema=state.schema, alias=""){
+  const c=validityColumn(schema); if(!c)return "TRUE";
+  const id=(alias?alias+".":"")+escIdent(c.column_name);
+  return `COALESCE(TRY_CAST(${id} AS INTEGER),1) NOT IN (-1,-99)`;
+}
+const validityLabels={"-99":"Not valid due to station maintenance or calibration","-1":"Not valid","1":"Valid","2":"Valid, but below detection limit","3":"Valid, but below detection limit and above detection capability","4":"Valid (Ozone only) using CCQM.O3.2019"};
+const verificationLabels={"1":"Verified","2":"Preliminary verified","3":"Not verified"};
+function qualityLabel(column,v){
+  if(v===null||v===undefined)return "";
+  const key=String(v);
+  if(column.toLowerCase()==="validity")return validityLabels[key]?`${key} — ${validityLabels[key]}`:key;
+  if(column.toLowerCase()==="verification")return verificationLabels[key]?`${key} — ${verificationLabels[key]}`:key;
+  return null;
+}
+async function detectAggregation(){
+  const tc=getPreviewTimeColumn(); if(!tc){state.aggregation="Variable";return}
+  const ts=timestampExpr(tc);
+  try{
+    const r=(await rows(`WITH t AS (SELECT ${ts} ts FROM current_data WHERE ${ts} IS NOT NULL ORDER BY ts LIMIT 2000), d AS (SELECT date_diff('minute',lag(ts) OVER (ORDER BY ts),ts) m FROM t) SELECT median(m) med FROM d WHERE m>0`))[0];
+    const m=Number(r?.med); state.aggregation=Number.isFinite(m)&&m>=20&&m<=90?"Hourly":Number.isFinite(m)&&m>=1200&&m<=1560?"Daily":"Variable";
+  }catch{state.aggregation="Variable"}
+  $("aggregationBadge").textContent=`Aggregation: ${state.aggregation}`;
+}
+function renderSeriesPicker(){
+  const root=$("seriesPicker");
+  root.innerHTML='<strong>Series:</strong>'+state.files.map(f=>`<label><input type="checkbox" class="seriesCheck" value="${html(f.id)}" ${f.id===state.current?.id?'checked':''}> ${html(f.file.name.replace(/\.(parquet|pq)$/i,''))}</label>`).join('');
+}
 async function selectFile(id){
   clearError(); busy(true);
   try{
     state.current=state.files.find(f=>f.id===id);
+    state.pollutant="";
+    state.country=""; state.samplingPointId=""; state.stationLatitude=null; state.stationLongitude=null;
     state.schema=state.current.schema;
     state.fileMeta=state.current.fileMeta;
     state.page=0;
@@ -395,6 +444,8 @@ async function selectFile(id){
     $("removeBtn").style.display="";
     renderSidebarFiles();
     await renderOverview();
+    await detectAggregation();
+    renderSeriesPicker();
     populateChartControls();
     await renderPreview();
     showTab("overview");
@@ -469,7 +520,16 @@ async function renderStationMetadata(fileName){
       if(found)id=String(found).split("/").pop();
     }
     const result=await rows(`SELECT DISTINCT * FROM read_csv_auto('DataExtract.csv.gz', HEADER=TRUE, ALL_VARCHAR=TRUE, SAMPLE_SIZE=-1) WHERE "Sampling Point Id"=${escLit(id)} ORDER BY TRY_CAST("Year" AS INTEGER) DESC NULLS LAST`);
-    if(!result.length){badge.textContent="No CSV match";root.innerHTML=`<div class="label">Sampling Point Id</div><div>${html(id)} — no matching record in DataExtract.csv.gz</div>`;return}
+    if(!result.length){state.timezone="Source / unspecified";$("timezoneBadge").textContent=`Timezone: ${state.timezone}`;badge.textContent="No CSV match";root.innerHTML=`<div class="label">Sampling Point Id</div><div>${html(id)} — no matching record in DataExtract.csv.gz</div>`;return}
+    state.timezone=String(result[0]["Timezone"]||"Source / unspecified").trim()||"Source / unspecified";
+    state.pollutant=String(result[0]["Air Pollutant"]||"").trim();
+    state.country=String(result[0]["Country"]||"").trim();
+    state.samplingPointId=String(result[0]["Sampling Point Id"]||id).trim();
+    const lat=parseFloat(String(result[0]["Latitude"]||"").replace(",","."));
+    const lon=parseFloat(String(result[0]["Longitude"]||"").replace(",","."));
+    state.stationLatitude=Number.isFinite(lat)?lat:null;
+    state.stationLongitude=Number.isFinite(lon)?lon:null;
+    $("timezoneBadge").textContent=`Timezone: ${state.timezone}`;
     const keys=Object.keys(result[0]);
     const clean=v=>String(v??"").trim();
     const varyingKeys=keys.filter(k=>new Set(result.map(r=>clean(r[k]))).size>1);
@@ -520,7 +580,86 @@ window.showTab=function(name){
   document.querySelectorAll(".tabpane").forEach(x=>x.classList.toggle("active",x.id==="pane-"+name));
   if(name==="data") renderPreview();
   if(name==="stats") renderStats();
+  if(name==="map") requestAnimationFrame(()=>requestAnimationFrame(()=>renderStationMap()));
 };
+
+async function renderStationMap(){
+  const countryBadge=$("mapCountry"), countBadge=$("mapStationCount"), note=$("mapNote");
+  if(!window.L){note.textContent="The map library could not be loaded.";return}
+  const ready=await state.metadataPromise;
+  if(!ready){countryBadge.textContent="Country: —";countBadge.textContent="Locations: —";note.textContent="DataExtract.csv.gz is unavailable, so the station map cannot be created.";return}
+  if(!state.country){countryBadge.textContent="Country: —";countBadge.textContent="Locations: —";note.textContent="No country was identified for the currently selected sampling point.";return}
+  countryBadge.textContent=`Country: ${state.country}`;
+  note.textContent="The map uses station coordinates from DataExtract.csv.gz and OpenStreetMap tiles. Records are filtered by country and then grouped by unique latitude/longitude, so colocated sampling points are drawn only once.";
+  try{
+    let stations=state.mapStationsCache.get(state.country);
+    if(!stations){
+      stations=await rows(`
+      WITH base AS (
+        SELECT
+          "Sampling Point Id" AS sampling_id,
+          "Air Quality Station Name" AS station_name,
+          "Municipality" AS municipality,
+          TRY_CAST(REPLACE("Latitude", ',', '.') AS DOUBLE) AS latitude,
+          TRY_CAST(REPLACE("Longitude", ',', '.') AS DOUBLE) AS longitude
+        FROM read_csv_auto('DataExtract.csv.gz', HEADER=TRUE, ALL_VARCHAR=TRUE, SAMPLE_SIZE=-1)
+        WHERE "Country"=${escLit(state.country)}
+      ), valid AS (
+        SELECT * FROM base
+        WHERE latitude BETWEEN -90 AND 90 AND longitude BETWEEN -180 AND 180
+      )
+      SELECT
+        latitude,
+        longitude,
+        max(station_name) AS station_name,
+        max(municipality) AS municipality,
+        count(DISTINCT sampling_id) AS sampling_count,
+        string_agg(DISTINCT sampling_id, ', ') AS sampling_ids,
+        max(CASE WHEN sampling_id=${escLit(String(state.samplingPointId||'').trim())} THEN 1 ELSE 0 END) AS is_current
+      FROM valid
+      GROUP BY latitude, longitude
+      ORDER BY station_name, latitude, longitude
+      `);
+      state.mapStationsCache.set(state.country,stations);
+    }
+    countBadge.textContent=`Locations: ${fmtInt(stations.length)}`;
+    if(!state.stationMap){
+      state.stationMap=L.map("stationMap",{preferCanvas:true});
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+        maxZoom:19,
+        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(state.stationMap);
+    }
+    if(state.mapLayer){state.mapLayer.clearLayers()} else {state.mapLayer=L.layerGroup().addTo(state.stationMap)}
+    const bounds=[];
+    for(const st of stations){
+      const lat=Number(st.latitude), lon=Number(st.longitude);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;
+      const current=Number(st.is_current)>0;
+      const marker=L.circleMarker([lat,lon],{
+        radius:current?7:4,
+        color:current?"#9b1c14":"#174b82",
+        weight:current?2:1,
+        fillColor:current?"#d92d20":"#245f9e",
+        fillOpacity:current?1:.72
+      }).addTo(state.mapLayer);
+      const title=st.station_name||"Air quality station";
+      const n=Number(st.sampling_count)||1;
+      marker.bindPopup(`<strong>${html(title)}</strong>${st.municipality?`<br>Municipality: ${html(st.municipality)}`:""}<br>Latitude: ${lat.toFixed(5)}<br>Longitude: ${lon.toFixed(5)}<br>Sampling points at this location: ${fmtInt(n)}${n<=10&&st.sampling_ids?`<br>Sampling Point Id${n===1?'':'s'}: ${html(st.sampling_ids)}`:""}${current?'<br><strong>Current station location</strong>':""}`);
+      if(current)marker.bringToFront();
+      bounds.push([lat,lon]);
+    }
+    // Leaflet must measure the map only after the tab is visible and has its final size.
+    // Doing invalidateSize before fitBounds prevents the broken/disconnected tile layout.
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    state.stationMap.invalidateSize({pan:false,animate:false});
+    if(bounds.length===1)state.stationMap.setView(bounds[0],10,{animate:false});
+    else if(bounds.length>1)state.stationMap.fitBounds(bounds,{padding:[24,24],maxZoom:10,animate:false});
+    else note.textContent=`No station locations with valid coordinates were found for ${state.country}.`;
+  }catch(e){
+    console.error(e); countBadge.textContent="Locations: error"; note.textContent="The station map could not be generated from DataExtract.csv.gz.";
+  }
+}
 
 function populateChartControls(){
   const x=$("chartX"), y=$("chartY");
@@ -727,6 +866,7 @@ function renderTable(id,data){
 }
 function formatCell(v,column=""){
   if(v===null||v===undefined)return "";
+  const ql=qualityLabel(column,v); if(ql!==null)return ql;
   if(v instanceof Date) return v.toISOString().replace("T"," ").replace("Z","");
   if(typeof v==="number"){
     if(!Number.isFinite(v)) return String(v);
@@ -745,20 +885,109 @@ function formatCell(v,column=""){
 async function renderStats(){
   if(!state.current)return;
   clearError();
-  const root=$("summaryStats");
+  const root=$("summaryStats"), refs=$("referenceStats");
   root.innerHTML='<div style="padding:18px;color:#707070">Calculating statistics…</div>';
   try{
-    const valueCol=state.schema.find(c=>c.column_name.toLowerCase()==="value");
-    if(!valueCol){root.innerHTML='<div style="padding:18px;color:#707070">No value column was found.</div>';$("statsInfo").textContent="";return}
-    const id=escIdent(valueCol.column_name);
-    const r=(await rows(`WITH value_data AS (SELECT TRY_CAST(${id} AS DOUBLE) AS v FROM current_data) SELECT count(*) AS total, count(*) FILTER (WHERE v IS NULL) AS missing, count(*) FILTER (WHERE v <= -900) AS no_data, count(*) FILTER (WHERE v IS NOT NULL AND v > -900) AS valid, min(v) FILTER (WHERE v > -900) AS minimum, max(v) FILTER (WHERE v > -900) AS maximum, avg(v) FILTER (WHERE v > -900) AS average FROM value_data`))[0];
-    const sentinels=await rows(`SELECT TRY_CAST(${id} AS DOUBLE) AS value, count(*) AS count FROM current_data WHERE TRY_CAST(${id} AS DOUBLE) <= -900 GROUP BY 1 ORDER BY 1`);
-    const roundedAverage=r.average===null||r.average===undefined?"":Number(r.average).toFixed(2);
-    const pairs=[["Total rows",r.total],["Valid values",r.valid],["Missing / null",r.missing],["No Data values",r.no_data],["Minimum",r.minimum],["Maximum",r.maximum],["Average",roundedAverage]];
-    root.innerHTML=`<table class="stats-table"><thead><tr><th>Statistic</th><th>Value</th></tr></thead><tbody>${pairs.map(([a,b])=>`<tr><td>${html(a)}</td><td>${html(formatCell(b))}</td></tr>`).join("")}${sentinels.length?`<tr><td>No Data codes found</td><td>${sentinels.map(x=>`${html(formatCell(x.value))} (${fmtInt(x.count)})`).join(", ")}</td></tr>`:""}</tbody></table>`;
-    $("statsInfo").textContent="value column";
-  }catch(e){error(e);root.innerHTML=""}
+    const vc=valueColumn(); if(!vc){root.innerHTML='<div style="padding:18px;color:#707070">No value column was found.</div>';return}
+    const id=escIdent(vc.column_name), qp=qualityPredicate();
+    const r=(await rows(`WITH d AS (SELECT TRY_CAST(${id} AS DOUBLE) v, ${qp} q FROM current_data) SELECT count(*) total,count(*) FILTER(WHERE v IS NULL) missing,count(*) FILTER(WHERE v<=-900) no_data,count(*) FILTER(WHERE q AND v IS NOT NULL AND v>-900) valid_count,count(*) FILTER(WHERE NOT q) invalid_count,min(v) FILTER(WHERE q AND v>-900) minimum,max(v) FILTER(WHERE q AND v>-900) maximum,avg(v) FILTER(WHERE q AND v>-900) average FROM d`))[0];
+    const pairs=[["Total rows",r.total],["Valid values used",r.valid_count],["EEA-invalid rows excluded",r.invalid_count],["Missing / null",r.missing],["No Data values",r.no_data],["Minimum",r.minimum],["Maximum",r.maximum],["Average",r.average==null?"":Number(r.average).toFixed(2)]];
+    root.innerHTML=`<table class="stats-table"><thead><tr><th>Statistic</th><th>Value</th></tr></thead><tbody>${pairs.map(([a,b])=>`<tr><td>${html(a)}</td><td>${html(formatCell(b))}</td></tr>`).join("")}</tbody></table>`;
+    $("statsInfo").textContent="Validity-filtered";
+    await renderReferenceStats();
+  }catch(e){error(e);root.innerHTML="";refs.innerHTML=""}
 }
+async function dailyAggregatesFor(source="current_data",schema=state.schema){
+  const tc=schema.find(c=>c.column_name.toLowerCase()==="start")||schema.find(c=>isTemporal(c.column_type));
+  const vc=schema.find(c=>c.column_name.toLowerCase()==="value"); if(!tc||!vc)return [];
+  const ts=timestampExprFor(tc,source), val=`TRY_CAST(${escIdent(vc.column_name)} AS DOUBLE)`, qp=qualityPredicate(schema);
+  const expected=state.aggregation==="Daily"?1:24;
+  return rows(`SELECT CAST(date_trunc('day',${ts}) AS DATE) AS "day", count(*) FILTER(WHERE ${qp} AND ${val}>-900) available,${expected} expected,100.0*count(*) FILTER(WHERE ${qp} AND ${val}>-900)/${expected} coverage,CASE WHEN 100.0*count(*) FILTER(WHERE ${qp} AND ${val}>-900)/${expected}<50 THEN NULL ELSE avg(${val}) FILTER(WHERE ${qp} AND ${val}>-900) END mean,CASE WHEN 100.0*count(*) FILTER(WHERE ${qp} AND ${val}>-900)/${expected}<50 THEN 'INSUFFICIENT' WHEN 100.0*count(*) FILTER(WHERE ${qp} AND ${val}>-900)/${expected}<75 THEN 'LOW COVERAGE' ELSE 'OK' END coverage_flag FROM ${source} WHERE ${ts} IS NOT NULL GROUP BY 1 ORDER BY 1`);
+}
+function timestampExprFor(column,source){return timestampExpr(column)}
+async function annualAggregates(){
+  const tc=getPreviewTimeColumn(),vc=valueColumn(); if(!tc||!vc)return [];
+  const ts=timestampExpr(tc),val=`TRY_CAST(${escIdent(vc.column_name)} AS DOUBLE)`,qp=qualityPredicate();
+  const expected=state.aggregation==="Daily"
+    ? `date_diff('day', make_date("year",1,1), make_date("year"+1,1,1))`
+    : `24 * date_diff('day', make_date("year",1,1), make_date("year"+1,1,1))`;
+  return rows(`WITH d AS (
+    SELECT ${ts} AS ts, ${val} AS v, ${qp} AS q
+    FROM current_data
+    WHERE ${ts} IS NOT NULL
+  ), a AS (
+    SELECT EXTRACT(year FROM ts)::INTEGER AS "year",
+           count(*) FILTER(WHERE q AND v>-900) AS available,
+           avg(v) FILTER(WHERE q AND v>-900) AS raw_mean
+    FROM d
+    GROUP BY 1
+  ), c AS (
+    SELECT "year", available, raw_mean, ${expected} AS expected
+    FROM a
+  )
+  SELECT "year", available, expected,
+         100.0*available/expected AS coverage,
+         CASE WHEN 100.0*available/expected<50 THEN NULL ELSE raw_mean END AS mean,
+         CASE WHEN 100.0*available/expected<50 THEN 'INSUFFICIENT'
+              WHEN 100.0*available/expected<75 THEN 'LOW COVERAGE'
+              ELSE 'OK' END AS coverage_flag
+  FROM c
+  ORDER BY "year"`);
+}
+let referenceValuesCache=null;
+async function loadReferenceValues(){
+  if(referenceValuesCache)return referenceValuesCache;
+  const url=new URL("air_quality_reference_values.csv",window.location.href);
+  const response=await fetch(url,{cache:"no-store"});
+  if(!response.ok)throw new Error(`air_quality_reference_values.csv returned ${response.status}`);
+  const text=await response.text();
+  const lines=text.replace(/^\uFEFF/,"").split(/\r?\n/).filter(x=>x.trim());
+  if(lines.length<2)throw new Error("Reference-value CSV is empty.");
+  const parse=line=>{let out=[],cur="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++}else q=!q}else if(c===','&&!q){out.push(cur);cur=""}else cur+=c}out.push(cur);return out};
+  const headers=parse(lines[0]).map(x=>x.trim());
+  referenceValuesCache=lines.slice(1).map(line=>{const vals=parse(line);const o={};headers.forEach((h,i)=>o[h]=(vals[i]??"").trim());return o});
+  return referenceValuesCache;
+}
+function normPollutant(s){return String(s||"").toUpperCase().replace(/[₂]/g,"2").replace(/[₅]/g,"5").replace(/[^A-Z0-9.]+/g," ").trim()}
+function matchingReferenceRows(all,pollutant){
+  const p=normPollutant(pollutant);
+  return all.filter(r=>String(r.aliases||r.pollutant||"").split("|").some(a=>normPollutant(a)===p)||normPollutant(r.pollutant)===p);
+}
+function normUnit(u){return String(u||"").toLowerCase().replace(/µ|μ/g,"u").replace(/³/g,"3").replace(/\s+/g,"").replace("m^-3","m3").replace("/m3","/m3")}
+function convertReferenceValue(value,fromUnit,toUnit){
+  const v=Number(value),f=normUnit(fromUnit),t=normUnit(toUnit); if(!Number.isFinite(v)||!t||f===t)return v;
+  const scale={"ng/m3":1,"ug/m3":1000,"mg/m3":1000000};
+  if(scale[f]&&scale[t])return v*scale[f]/scale[t];
+  return null;
+}
+async function detectedMeasurementUnit(){
+  const c=state.schema.find(x=>/^(unit|units)$/i.test(x.column_name));
+  if(!c)return "";
+  try{return String((await rows(`SELECT CAST(${escIdent(c.column_name)} AS VARCHAR) AS u FROM current_data WHERE ${escIdent(c.column_name)} IS NOT NULL LIMIT 1`))[0]?.u||"").trim()}catch{return ""}
+}
+async function renderReferenceStats(){
+  const root=$("referenceStats");
+  const pollutant=String(state.pollutant||"").trim();
+  if(!pollutant){root.innerHTML='<div style="padding:18px;color:#707070">The pollutant could not be resolved from station metadata.</div>';return}
+  let allRefs;
+  try{allRefs=await loadReferenceValues()}catch(e){root.innerHTML=`<div style="padding:18px;color:#912018"><strong>Reference table unavailable.</strong> Place <span class="code">air_quality_reference_values.csv</span> in the same folder as this HTML file.<br>${html(e.message||e)}</div>`;return}
+  const matched=matchingReferenceRows(allRefs,pollutant);
+  if(!matched.length){root.innerHTML=`<div style="padding:18px;color:#707070">No daily or annual reference values in air_quality_reference_values.csv match ${html(pollutant)}.</div>`;return}
+  const dailyRefs=matched.filter(r=>r.averaging_period.toLowerCase()==="daily");
+  const annualRefs=matched.filter(r=>r.averaging_period.toLowerCase()==="annual");
+  const daily=dailyRefs.length?await dailyAggregatesFor():[];
+  const annual=annualRefs.length?await annualAggregates():[];
+  const measurementUnit=await detectedMeasurementUnit();
+  const usable=daily.filter(x=>x.mean!==null&&x.mean!==undefined);
+  const annualUsable=annual.filter(x=>x.mean!==null&&x.mean!==undefined);
+  const converted=ref=>{const x=convertReferenceValue(ref.limit_value,ref.unit,measurementUnit);return measurementUnit&&x!==null?x:Number(ref.limit_value)};
+  const displayLimit=ref=>`${html(ref.limit_value)} ${html(ref.unit.replace("ug/m3","µg/m³").replace("mg/m3","mg/m³").replace("ng/m3","ng/m³"))}`;
+  const dailyTable=dailyRefs.length?`<table><thead><tr><th>Daily reference</th><th>Value</th><th>Allowed exceedances/year</th><th>Observed exceedance days</th><th>Days evaluated</th></tr></thead><tbody>${dailyRefs.map(ref=>{const lim=converted(ref);return `<tr><td>${html(ref.framework)} ${html(ref.reference_year)} ${html(ref.pollutant)}</td><td>${displayLimit(ref)}</td><td>${html(ref.allowed_exceedances_per_year||"—")}</td><td>${lim===null?"Unit mismatch":usable.filter(x=>Number(x.mean)>lim).length}</td><td>${usable.length}</td></tr>`}).join("")}</tbody></table>`:"";
+  const annualTable=annualRefs.length?`<table style="margin-top:${dailyRefs.length?12:0}px"><thead><tr><th>Annual reference</th><th>Value</th><th>Years exceeding</th><th>Years evaluated</th></tr></thead><tbody>${annualRefs.map(ref=>{const lim=converted(ref);return `<tr><td>${html(ref.framework)} ${html(ref.reference_year)} ${html(ref.pollutant)}</td><td>${displayLimit(ref)}</td><td>${lim===null?"Unit mismatch":annualUsable.filter(x=>Number(x.mean)>lim).length}</td><td>${annualUsable.length}</td></tr>`}).join("")}</tbody></table>`:"";
+  const annualDetail=annualRefs.length?`<table style="margin-top:12px"><thead><tr><th>Year</th><th>Calculated annual mean</th><th>Coverage</th><th>Coverage status</th>${annualRefs.map(r=>`<th>${html(r.framework)} ${html(r.reference_year)} exceeded</th>`).join("")}</tr></thead><tbody>${annual.map(x=>{const mean=x.mean===null||x.mean===undefined?null:Number(x.mean),coverage=Number(x.coverage);return `<tr><td>${html(x.year)}</td><td>${mean===null?"—":mean.toFixed(2)+(measurementUnit?" "+html(measurementUnit):"")}</td><td>${Number.isFinite(coverage)?coverage.toFixed(1)+"%":"—"}</td><td>${html(x.coverage_flag||"")}</td>${annualRefs.map(ref=>{const lim=converted(ref);return `<td>${mean===null?"Not evaluated":lim===null?"Unit mismatch":mean>lim?"Yes":"No"}</td>`}).join("")}</tr>`}).join("")}</tbody></table>`:"";
+  root.innerHTML=`<div style="padding:0 0 10px;color:#707070;font-size:12px">Pollutant: <strong>${html(pollutant)}</strong>${measurementUnit?` • Measurement unit: <strong>${html(measurementUnit)}</strong>`:""} • References loaded dynamically from <span class="code">air_quality_reference_values.csv</span>.</div>${dailyTable}${annualTable}${annualDetail}`;
+}
+
 window.changeDaysPerPage=()=>{state.page=0;renderPreview()};
 window.prevPage=()=>{if(state.page>0){state.page--;renderPreview()}};
 window.nextPage=()=>{
@@ -767,39 +996,39 @@ window.nextPage=()=>{
 };
 
 window.drawChart=async function(){
-  if(!state.current) return;
-  clearError(); busy(true);
+  if(!state.current)return; clearError();busy(true);
   try{
-    const type=$("chartType").value,x=$("chartX").value,y=$("chartY").value,mode=$("chartMode").value;
-    if(!x||!y) return;
-    const xi=escIdent(x), yi=escIdent(y);
-    const xType=state.schema.find(c=>c.column_name===x)?.column_type||"";
-    const displayX=isTemporal(xType)?`CAST(${xi} AS VARCHAR)`:xi;
-    let q;
-    if(mode==="raw"){
-      q=`SELECT ${displayX} AS x, TRY_CAST(${yi} AS DOUBLE) AS y FROM current_data WHERE ${xi} IS NOT NULL AND TRY_CAST(${yi} AS DOUBLE) > -900 ORDER BY ${xi} LIMIT 5000`;
-    }else{
-      const step=Math.max(1,Math.floor(Number($("chartStep").value)||1));
-      const unit=$("chartStepUnit").value;
-      if(!isTemporal(xType))throw new Error("Interval averaging requires a date/time field on the X axis.");
-      q=`SELECT CAST(time_bucket(INTERVAL '${step} ${unit}', ${xi}) AS VARCHAR) AS x, avg(TRY_CAST(${yi} AS DOUBLE)) AS y FROM current_data WHERE ${xi} IS NOT NULL AND TRY_CAST(${yi} AS DOUBLE) > -900 GROUP BY time_bucket(INTERVAL '${step} ${unit}', ${xi}) ORDER BY time_bucket(INTERVAL '${step} ${unit}', ${xi}) LIMIT 5000`;
+    const type=$("chartType").value,mode=$("chartMode").value;
+    const selected=[...document.querySelectorAll('.seriesCheck:checked')].map(x=>x.value); if(!selected.length)selected.push(state.current.id);
+    const series=[]; const allLabels=new Set(); let total=0;
+    for(const fid of selected){
+      const f=state.files.find(z=>z.id===fid); if(!f)continue;
+      const schema=f.schema, tc=schema.find(c=>c.column_name.toLowerCase()==="start")||schema.find(c=>isTemporal(c.column_type)), vc=schema.find(c=>c.column_name.toLowerCase()==="value")||schema.find(c=>isNumeric(c.column_type)); if(!tc||!vc)continue;
+      const ts=timestampExpr(tc), val=`TRY_CAST(${escIdent(vc.column_name)} AS DOUBLE)`, qp=qualityPredicate(schema);
+      let q;
+      if(mode==="raw") q=`SELECT CAST(${ts} AS VARCHAR) x,${val} y FROM read_parquet(${escLit(f.virtual)}) WHERE ${ts} IS NOT NULL AND ${val}>-900 AND ${qp} ORDER BY ${ts} LIMIT 5000`;
+      else {
+        const step=Math.max(1,Math.floor(Number($("chartStep").value)||1)),unit=$("chartStepUnit").value;
+        q=`SELECT CAST(time_bucket(INTERVAL '${step} ${unit}',${ts}) AS VARCHAR) x,avg(${val}) y FROM read_parquet(${escLit(f.virtual)}) WHERE ${ts} IS NOT NULL AND ${val}>-900 AND ${qp} GROUP BY 1 ORDER BY 1 LIMIT 5000`;
+      }
+      const d=await rows(q); total+=d.length;
+      const points=d.map(r=>({x:String(r.x??'').replace('T',' ').replace(/Z$/,''),y:Number(r.y)}));
+      points.forEach(pt=>allLabels.add(pt.x));
+      series.push({name:f.file.name.replace(/\.(parquet|pq)$/i,''),points});
     }
-    const d=await rows(q);
-    $("chartRows").textContent=`${fmtInt(d.length)} plotted points`;
-    if(state.chart) state.chart.destroy();
-    const ctx=$("chartCanvas");
-    const isScatter=type==="scatter";
-    const dataset=isScatter
-      ? {label:`${y} vs ${x}`,data:d.map(r=>({x:Number(r.x),y:Number(r.y)})),pointRadius:2}
-      : {label:mode==="raw"?y:`Average ${y}` ,data:d.map(r=>r.y),borderWidth:2,pointRadius:type==="line"?2:0};
-    const config={
-      type,
-      data:isScatter?{datasets:[dataset]}:{labels:d.map(r=>String(r.x??"").replace("T"," ").replace(/Z$/,"") ),datasets:[dataset]},
+    const labels=[...allLabels].sort();
+    const datasets=series.map(s=>{
+      const byX=new Map(s.points.map(p=>[p.x,p.y]));
+      return {label:s.name,data:labels.map(x=>byX.has(x)?byX.get(x):null),borderWidth:2,pointRadius:type==='line'?1:2,spanGaps:false};
+    });
+    $("chartRows").textContent=`${fmtInt(total)} plotted points`;
+    if(state.chart)state.chart.destroy();
+    state.chart=new Chart($("chartCanvas"),{
+      type:type==='scatter'?'line':type,
+      data:{labels,datasets},
       options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:true}},scales:{x:{ticks:{maxTicksLimit:18}},y:{beginAtZero:false}}}
-    };
-    state.chart=new Chart(ctx,config);
-  }catch(e){error(e)}
-  finally{busy(false)}
+    });
+  }catch(e){error(e)}finally{busy(false)}
 };
 
 async function downloadDuckDBFile(virtual,outName,mime){
@@ -838,6 +1067,15 @@ window.exportData=async function(format){
   }catch(e){error(e)}
   finally{busy(false)}
 };
+
+function downloadBlob(data,name,mime){const u=URL.createObjectURL(new Blob([data],{type:mime}));const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+async function processedRows(kind){
+  if(kind==='filtered')return rows(`SELECT * FROM current_data WHERE ${qualityPredicate()}`);
+  if(kind==='daily')return dailyAggregatesFor(); if(kind==='annual')return annualAggregates(); return rows('SELECT * FROM current_data');
+}
+window.exportProcessed=async function(kind,format){try{busy(true);const d=await processedRows(kind);if(!d.length)throw new Error('No rows to export.');const cols=Object.keys(d[0]);const csv=[cols.join(','),...d.map(r=>cols.map(c=>'"'+String(r[c]??'').replaceAll('"','""')+'"').join(','))].join('\n');downloadBlob(csv,`${state.current.file.name.replace(/\.(parquet|pq)$/i,'')}_${kind}.csv`,'text/csv');}catch(e){error(e)}finally{busy(false)}};
+window.exportExcel=async function(kind){try{busy(true);if(!window.XLSX)throw new Error('Excel library could not be loaded.');const d=await processedRows(kind);const ws=XLSX.utils.json_to_sheet(d),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,kind);XLSX.writeFile(wb,`${state.current.file.name.replace(/\.(parquet|pq)$/i,'')}_${kind}.xlsx`);}catch(e){error(e)}finally{busy(false)}};
+window.exportWide=async function(format){try{busy(true);const maps=[],all=new Set();for(const f of state.files){const sc=f.schema,tc=sc.find(c=>c.column_name.toLowerCase()==='start')||sc.find(c=>isTemporal(c.column_type)),vc=sc.find(c=>c.column_name.toLowerCase()==='value');if(!tc||!vc)continue;const ts=timestampExpr(tc),val=`TRY_CAST(${escIdent(vc.column_name)} AS DOUBLE)`,qp=qualityPredicate(sc);const d=await rows(`SELECT CAST(${ts} AS VARCHAR) t,${val} v FROM read_parquet(${escLit(f.virtual)}) WHERE ${ts} IS NOT NULL AND ${val}>-900 AND ${qp} ORDER BY ${ts}`);const m=new Map(d.map(x=>[String(x.t),x.v]));d.forEach(x=>all.add(String(x.t)));maps.push([f.file.name.replace(/\.(parquet|pq)$/i,''),m])}const out=[...all].sort().map(t=>{const r={timestamp:t};maps.forEach(([n,m])=>r[n]=m.has(t)?m.get(t):null);return r});if(!out.length)throw new Error('No compatible series to export.');if(format==='xlsx'){const ws=XLSX.utils.json_to_sheet(out),wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'wide');XLSX.writeFile(wb,'EEA_wide_export.xlsx')}else{const cols=Object.keys(out[0]);const csv=[cols.join(','),...out.map(r=>cols.map(c=>'"'+String(r[c]??'').replaceAll('"','""')+'"').join(','))].join('\n');downloadBlob(csv,'EEA_wide_export.csv','text/csv')}}catch(e){error(e)}finally{busy(false)}};
 
 window.exportTrainset=async function(){
   if(!state.current)return;
@@ -882,7 +1120,7 @@ window.exportTrainset=async function(){
             TRY_CAST(${valueId} AS DOUBLE) AS value,
             row_number() OVER (ORDER BY ${ts}) AS rn
           FROM current_data
-          WHERE ${ts} IS NOT NULL
+          WHERE ${ts} IS NOT NULL AND ${qualityPredicate()}
         )
         SELECT
           'series_a' AS series,
